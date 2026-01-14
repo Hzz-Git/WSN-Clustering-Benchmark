@@ -49,6 +49,12 @@ class HEEDClustering(ClusteringAlgorithm):
         cluster_cfg = config.get('clustering', {})
         self.comm_range = config.get('network', {}).get('comm_range', 30.0)
 
+        # Control message sizes (bits) - from config or defaults
+        packets_cfg = config.get('packets', {})
+        self.ctrl_bits_status = packets_cfg.get('control_size_heed', 800)  # Tentative status
+        self.ctrl_bits_final = packets_cfg.get('control_size_heed', 800)  # Final announcement
+        self.ctrl_bits_join = packets_cfg.get('control_size_heed', 800)  # Join request
+
     @property
     def name(self) -> str:
         return "HEED"
@@ -148,9 +154,9 @@ class HEEDClustering(ClusteringAlgorithm):
                         # Join the best CH
                         my_cluster_head[node.id] = best_ch
 
-                # Control message: broadcast CH status
+                # Control message: broadcast CH status (within comm_range)
                 if ch_status[node.id] == 'tentative':
-                    self.control_messages += 1
+                    self.ctrl_broadcast_fixed(node, self.comm_range, self.ctrl_bits_status)
 
             # Double probabilities
             for node in alive_nodes:
@@ -166,12 +172,14 @@ class HEEDClustering(ClusteringAlgorithm):
                 # Become final CH
                 ch_status[node.id] = 'final'
                 final_heads.append(node)
-                self.control_messages += 1  # Final CH announcement
+                # Final CH announcement (within comm_range)
+                self.ctrl_broadcast_fixed(node, self.comm_range, self.ctrl_bits_final)
             elif my_cluster_head[node.id] is None:
                 # Uncovered node becomes CH
                 ch_status[node.id] = 'final'
                 final_heads.append(node)
-                self.control_messages += 1
+                # Announcement for newly-formed CH
+                self.ctrl_broadcast_fixed(node, self.comm_range, self.ctrl_bits_final)
 
         return final_heads
 
@@ -214,7 +222,8 @@ class HEEDClustering(ClusteringAlgorithm):
 
             if best_ch is not None:
                 clusters[best_ch.id].add_member(node)
-                self.control_messages += 1  # Join request
+                # Join request (unicast to chosen CH)
+                self.ctrl_unicast(node, best_ch, self.ctrl_bits_join)
 
         return list(clusters.values())
 

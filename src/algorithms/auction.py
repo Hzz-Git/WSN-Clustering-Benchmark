@@ -52,9 +52,11 @@ class AuctionClustering(ClusteringAlgorithm):
         self.m_actions = auction_cfg.get('m_actions', [0.5, 0.8, 1.0, 1.2, 1.5, 2.0])
         self.bandit_epsilon = auction_cfg.get('bandit_epsilon', 0.1)  # Exploration rate
         self.bandit_alpha = auction_cfg.get('bandit_alpha', 0.1)  # Learning rate
-        self.reward_ch_success = 1.0  # Reward for successful CH service
-        self.reward_min = auction_cfg.get('reward_min', 0.1)  # Minimum reward
         self.use_bandit = auction_cfg.get('use_bandit', True)  # Enable/disable bandit
+
+        # Energy-efficiency based reward (new)
+        self.ref_ema = None  # EMA of median cost_per_bit (baseline)
+        self.ref_ema_rho = auction_cfg.get('ref_ema_rho', 0.3)  # EMA smoothing factor
 
         # Clustering parameters
         cluster_cfg = config.get('clustering', {})
@@ -69,6 +71,13 @@ class AuctionClustering(ClusteringAlgorithm):
         self.implicit_bidding = auction_cfg.get('implicit_bidding', True)
         self.willingness_threshold = auction_cfg.get('willingness_threshold', 0.3)
         self.min_energy_ratio = auction_cfg.get('min_energy_ratio', 0.2)
+
+        # Control message sizes (bits) - from config or defaults
+        packets_cfg = config.get('packets', {})
+        self.ctrl_bits_announce = packets_cfg.get('control_size_auction', 960)  # Seed/CH announce
+        self.ctrl_bits_bid = packets_cfg.get('control_size_auction', 960)  # Bid message
+        self.ctrl_bits_result = packets_cfg.get('control_size_auction', 960)  # Auction result
+        self.ctrl_bits_join = packets_cfg.get('control_size_auction', 960)  # Join request
 
     @property
     def name(self) -> str:
@@ -188,29 +197,80 @@ class AuctionClustering(ClusteringAlgorithm):
 
     def _bandit_update_q_values(self) -> None:
         """
-        Update Q-values for all nodes based on rewards.
+        Update Q-values for all nodes based on energy-efficiency rewards.
 
-        Reward function (from paper):
-        - r = 1.0 if node was CH and survived (is_alive after round)
-        - r = reward_min otherwise
+        NEW reward function (learns "be CH when it's efficient for me"):
+        - For CH who survived: reward = clip((ref - cost_per_bit) / (ref + eps), -1, +1)
+          where cost_per_bit = spent_energy / bits_out
+          and ref = EMA of median(cost_per_bit of all CHs this epoch)
+        - For CH who died: reward = -1.0 (penalty for over-aggression)
+        - For non-CH: reward = 0.0 (neutral)
 
-        Q-value update (incremental mean):
-        Q(a) = Q(a) + alpha * (r - Q(a))
+        Q-value update: Q(a) = Q(a) + alpha * (reward - Q(a))
         """
         if not self.use_bandit:
             return
 
-        for node in self.network.nodes:
-            if not node.is_alive:
+        # Get config values for bits_out calculation
+        data_bits = int(self.config.get('packets', {}).get('data_size', 32000))
+        agg_ratio = float(self.config.get('clustering', {}).get('aggregation_ratio', 0.5))
+        eps = 1e-9
+
+        # Step 1: Calculate cost_per_bit for all CHs
+        ch_costs = []  # List of (node, cost_per_bit)
+        for cluster in self.clusters:
+            ch = cluster.head
+            if not ch.bandit_was_ch:
                 continue
 
+            # Get spent energy (set by base class after data phase)
+            spent = getattr(ch, '_spent_energy', 0.0)
+
+            # Calculate bits_out (same formula as energy model)
+            num_members = len(cluster.get_alive_members())
+            bits_out = int(data_bits * (num_members + 1) * agg_ratio)
+
+            if bits_out > 0:
+                cost_per_bit = spent / (bits_out + eps)
+                ch_costs.append((ch, cost_per_bit))
+
+        # Step 2: Calculate reference (median of CH costs) and update EMA
+        if ch_costs:
+            costs_only = [c for _, c in ch_costs]
+            median_cost = float(np.median(costs_only))
+
+            # Update EMA of reference
+            if self.ref_ema is None:
+                self.ref_ema = median_cost
+            else:
+                self.ref_ema = (1 - self.ref_ema_rho) * self.ref_ema + self.ref_ema_rho * median_cost
+        else:
+            # No CHs this round, keep old ref
+            if self.ref_ema is None:
+                self.ref_ema = 1e-6  # Small default
+
+        ref = self.ref_ema + eps
+
+        # Step 3: Calculate rewards and update Q-values
+        # Build a map of node -> cost_per_bit for CHs
+        ch_cost_map = {node.id: cost for node, cost in ch_costs}
+
+        for node in self.network.nodes:
             action_idx = node.bandit_current_action
 
-            # Calculate reward
-            if node.bandit_was_ch and node.is_alive:
-                reward = self.reward_ch_success
+            # Determine reward
+            if not node.bandit_was_ch:
+                # Non-CH: neutral reward
+                reward = 0.0
+            elif not node.is_alive:
+                # CH who died: strong penalty
+                reward = -1.0
             else:
-                reward = self.reward_min
+                # CH who survived: reward based on efficiency
+                cost = ch_cost_map.get(node.id, ref)  # Use ref if not found
+                # Positive if better than ref, negative if worse
+                reward = (ref - cost) / (ref + eps)
+                reward = max(-1.0, min(1.0, reward))  # Clip to [-1, 1]
 
             # Update Q-value using exponential moving average
             old_q = node.bandit_q_values.get(action_idx, 0.5)
@@ -281,8 +341,8 @@ class AuctionClustering(ClusteringAlgorithm):
                         if self.network.get_distance(node, other) <= self.join_radius:
                             assigned.add(other.id)
 
-                # Control message: SEED_ANNOUNCE broadcast
-                self.control_messages += 1
+                # Control message: SEED_ANNOUNCE broadcast (fixed radius)
+                self.ctrl_broadcast_fixed(node, self.join_radius, self.ctrl_bits_announce)
 
         return seeds
 
@@ -324,7 +384,8 @@ class AuctionClustering(ClusteringAlgorithm):
                         if self.network.get_distance(node, other) <= self.join_radius:
                             assigned.add(other.id)
 
-                self.control_messages += 1
+                # Control message: CH announce broadcast (fixed radius)
+                self.ctrl_broadcast_fixed(node, self.join_radius, self.ctrl_bits_announce)
 
         return heads
 
@@ -342,7 +403,9 @@ class AuctionClustering(ClusteringAlgorithm):
                 # CH died, try to promote backup or skip
                 if cluster.backup and cluster.backup.is_alive:
                     new_heads.append(cluster.backup)
-                    self.control_messages += 1
+                    # Backup promotion announcement to cluster
+                    self.ctrl_broadcast_to_set(cluster.backup, cluster.all_nodes,
+                                               self.ctrl_bits_announce)
                 continue
 
             # Get all alive nodes in cluster
@@ -360,7 +423,9 @@ class AuctionClustering(ClusteringAlgorithm):
                     # Use current CH if still alive
                     if cluster.head.is_alive:
                         new_heads.append(cluster.head)
-                        self.control_messages += 1  # Just announcement
+                        # Just announcement (no bids collected)
+                        self.ctrl_broadcast_to_set(cluster.head, cluster.all_nodes,
+                                                   self.ctrl_bits_result)
                         continue
                     else:
                         # Force selection from all candidates
@@ -375,8 +440,13 @@ class AuctionClustering(ClusteringAlgorithm):
                 primary = willing_candidates[0]
                 new_heads.append(primary)
 
-                # Control messages: only willing nodes send bids + result broadcast
-                self.control_messages += len(willing_candidates) + 1
+                # Control messages: willing nodes send bids to current CH (unicast)
+                for candidate in willing_candidates:
+                    self.ctrl_unicast(candidate, cluster.head, self.ctrl_bits_bid)
+
+                # Result broadcast from current CH to cluster
+                self.ctrl_broadcast_to_set(cluster.head, cluster.all_nodes,
+                                           self.ctrl_bits_result)
             else:
                 # ORIGINAL: All nodes send bids
                 for node in all_candidates:
@@ -386,8 +456,13 @@ class AuctionClustering(ClusteringAlgorithm):
                 primary = all_candidates[0]
                 new_heads.append(primary)
 
-                # Control messages: all candidates + result broadcast
-                self.control_messages += len(all_candidates) + 1
+                # Control messages: all candidates send bids (unicast)
+                for candidate in all_candidates:
+                    self.ctrl_unicast(candidate, cluster.head, self.ctrl_bits_bid)
+
+                # Result broadcast
+                self.ctrl_broadcast_to_set(cluster.head, cluster.all_nodes,
+                                           self.ctrl_bits_result)
 
         return new_heads
 
@@ -417,9 +492,14 @@ class AuctionClustering(ClusteringAlgorithm):
                 cluster.members.remove(backup)
                 cluster.set_backup(backup)
 
-        # Control messages: join requests from members
+        # Control messages: join requests from members (unicast to CH)
         for cluster in clusters:
-            self.control_messages += cluster.member_count
+            for member in cluster.members:
+                if member.is_alive:
+                    self.ctrl_unicast(member, cluster.head, self.ctrl_bits_join)
+            # Backup also sends join (it's not in members list after removal)
+            if cluster.backup and cluster.backup.is_alive:
+                self.ctrl_unicast(cluster.backup, cluster.head, self.ctrl_bits_join)
 
         return clusters
 

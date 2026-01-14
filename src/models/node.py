@@ -102,9 +102,11 @@ class Node:
         return True
     
     def reset_for_round(self):
-        """Reset per-round state (role, cluster assignment)."""
+        """Reset per-round state (role, cluster assignment, bid, bandit flag)."""
         self.role = NodeRole.UNDECIDED
         self.cluster_head_id = None
+        self.bid = 0.0  # Clear stale bid to avoid backup selection pollution
+        self.bandit_was_ch = False  # Reset bandit reward flag for this round
     
     def become_cluster_head(self):
         """Transition to cluster head role."""

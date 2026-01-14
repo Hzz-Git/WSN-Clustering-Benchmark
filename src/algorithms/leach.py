@@ -47,6 +47,18 @@ class LEACHClustering(ClusteringAlgorithm):
         self.rounds_per_cycle = int(1 / self.p)  # 1/p rounds per cycle
         self.current_round_in_cycle = 0
 
+        # Network dimensions for broadcast radius
+        # Since LEACH uses global join (nearest CH), advertisement must cover whole network
+        net_cfg = config.get('network', {})
+        area_w = net_cfg.get('area_width', 100.0)
+        area_h = net_cfg.get('area_height', 100.0)
+        self.network_diameter = np.sqrt(area_w**2 + area_h**2)  # Diagonal
+
+        # Control message sizes (bits)
+        packets_cfg = config.get('packets', {})
+        self.ctrl_bits_adv = packets_cfg.get('control_size_heed', 800)  # CH advertisement
+        self.ctrl_bits_join = packets_cfg.get('control_size_heed', 800)  # Join request
+
     @property
     def name(self) -> str:
         return "LEACH"
@@ -102,8 +114,8 @@ class LEACHClustering(ClusteringAlgorithm):
             if np.random.random() < threshold:
                 heads.append(node)
                 self.was_ch_this_cycle.add(node.id)
-                # Control message: CH advertisement
-                self.control_messages += 1
+                # Control message: CH advertisement (network-wide, since join is global)
+                self.ctrl_broadcast_fixed(node, self.network_diameter, self.ctrl_bits_adv)
 
         # If no CH elected (rare), force selection
         if not heads and alive_nodes:
@@ -111,7 +123,7 @@ class LEACHClustering(ClusteringAlgorithm):
             best = max(alive_nodes, key=lambda n: n.current_energy)
             heads.append(best)
             self.was_ch_this_cycle.add(best.id)
-            self.control_messages += 1
+            self.ctrl_broadcast_fixed(best, self.network_diameter, self.ctrl_bits_adv)
 
         return heads
 
@@ -124,9 +136,11 @@ class LEACHClustering(ClusteringAlgorithm):
 
         clusters = form_clusters_from_heads(heads, self.network.nodes, self.network)
 
-        # Control messages: join requests from members
+        # Control messages: join requests from members (unicast to CH)
         for cluster in clusters:
-            self.control_messages += cluster.member_count
+            for member in cluster.members:
+                if member.is_alive:
+                    self.ctrl_unicast(member, cluster.head, self.ctrl_bits_join)
 
         return clusters
 
@@ -149,6 +163,10 @@ class LEACHCentralized(ClusteringAlgorithm):
 
         leach_cfg = config.get('leach', {})
         self.p = leach_cfg.get('p', 0.05)
+
+        # Control message sizes (bits)
+        packets_cfg = config.get('packets', {})
+        self.ctrl_bits_assign = packets_cfg.get('control_size_heed', 800)  # BS assignment
 
     @property
     def name(self) -> str:
@@ -216,8 +234,8 @@ class LEACHCentralized(ClusteringAlgorithm):
             if node not in heads:
                 heads.append(node)
 
-        # Control messages: BS broadcasts cluster assignments
-        self.control_messages += len(alive_nodes)
+        # Control messages: BS broadcasts cluster assignments (only RX cost for nodes)
+        self.ctrl_broadcast_from_bs(alive_nodes, self.ctrl_bits_assign)
 
         return heads
 
