@@ -1,0 +1,94 @@
+# MAS-WSN Simulation Configuration
+# Updated to match PROPOSED_METHOD_SPEC.md
+
+network:
+  num_nodes: 50              # N = 50 (from spec)
+  area_width: 100.0          # meters
+  area_height: 100.0         # meters
+  bs_x: 50.0                 # base station x position
+  bs_y: 100.0                # base station y position (at top edge, per spec)
+  comm_range: 30.0           # communication range (R_join from spec)
+
+energy:
+  # Heterogeneous initial energy: N(mu=2.0, sigma=0.2), clipped > 0.1
+  initial_mean: 2.0          # Joules (mean)
+  initial_std: 0.2           # Joules (std dev)
+  initial_min: 0.1           # Joules (minimum, clipping threshold)
+  e_elec: 0.00000005         # Electronics energy 50 nJ/bit = 50e-9 J/bit
+  e_amp: 0.0000000001        # Amplifier energy 100 pJ/bit/m^2 = 100e-12 J/bit/m^2
+  e_da: 0.000000005          # Data aggregation energy 5 nJ/bit = 5e-9 J/bit
+  # Two-mode model (optional, for LEACH comparison)
+  e_fs: 0.00000000001        # Free space amplifier 10 pJ/bit/m^2
+  e_mp: 0.0000000000000013   # Multipath amplifier 0.0013 pJ/bit/m^4
+  d_crossover: 87.0          # Distance threshold (m)
+
+packets:
+  data_size: 32000           # 4000 bytes = 32000 bits (from spec)
+  control_size_heed: 800     # 100 bytes = 800 bits (HEED control)
+  control_size_auction: 960  # 120 bytes = 960 bits (Auction control)
+
+clustering:
+  desired_ch_percent: 0.05   # 5% cluster heads (for LEACH)
+  join_radius: 30.0          # R_join = 30 (from spec)
+  spacing_radius: 30.0       # Spacing radius for CH reselection
+  aggregation_ratio: 0.5     # CH sends 0.5x received data to BS
+  ch_data_load: 5            # 5 member packets per epoch per CH
+
+simulation:
+  max_epochs: 500            # reasonable default
+  num_trials: 15             # 15 trials (from spec)
+  random_seed: 42            # base seed (incremented for each trial)
+  recluster_interval: 50     # Re-cluster every N epochs (fixed timer for now)
+
+# ABC Auction mechanism parameters (from spec slide 8)
+auction:
+  # Bid formula: b_i(t) = m_i(t) * (alpha*E_ratio + beta/(h+eps) + gamma*Q) - lambda*D_i(t)
+  alpha: 5.0                 # weight for residual energy
+  beta: 1.0                  # weight for closeness (1/hop)
+  gamma: 0.2                 # weight for link quality
+  lambda_: 2.0               # weight for fairness debt penalty
+  epsilon: 0.1               # stabilizer for division
+  # Fairness debt system
+  eta: 0.1                   # fairness step size
+  d_max: 3.0                 # debt clipping bound [-D_max, D_max]
+  # Aggressiveness (bandit-tuned)
+  m_default: 1.0             # default aggressiveness multiplier
+  m_actions: [0.5, 0.8, 1.0, 1.2, 1.5, 2.0]  # bandit action space
+  bandit_epsilon: 0.1        # exploration rate (epsilon-greedy)
+  bandit_alpha: 0.1          # learning rate for Q-value updates
+  reward_min: 0.1            # minimum reward (when not CH)
+  use_bandit: true           # enable/disable bandit learning
+  # Bootstrap
+  bootstrap_t_max: 1.0       # max timer for seed selection (seconds, normalized)
+  # Implicit bidding (reduces control overhead)
+  implicit_bidding: true     # only willing nodes send bids
+  willingness_threshold: 0.3 # min local score to bid
+  min_energy_ratio: 0.2      # min energy ratio to be willing
+
+# HEED baseline parameters (from spec)
+heed:
+  c_prob: 0.05               # initial CH probability
+  p_min: 0.0001              # minimum probability threshold (1e-4)
+
+# LEACH baseline parameters
+leach:
+  p: 0.05                    # desired percentage of CHs
+
+# Experiment configurations
+experiments:
+  comparison:
+    trials: 15
+    algorithms: ["auction", "heed", "leach"]
+    output_dir: results/data/comparison/
+
+  scalability:
+    node_counts: [50, 100, 200]
+    trials: 15
+    output_dir: results/data/scalability/
+
+  sensitivity:
+    alpha_range: [2.0, 5.0, 8.0]
+    beta_range: [0.5, 1.0, 2.0]
+    lambda_range: [1.0, 2.0, 4.0]
+    trials: 10
+    output_dir: results/data/sensitivity/
