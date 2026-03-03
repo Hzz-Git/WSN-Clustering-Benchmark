@@ -224,19 +224,6 @@ E_da(k)    = E_DA * k                         (aggregate k bits)
 
 Control messages (CH advertisements, bids, join requests, HEED iterations) use the same model with configurable packet sizes and broadcast radii. This prevents systematic underestimation of coordination overhead.
 
-## Citation
-
-If you use this framework in your research, please cite:
-
-```bibtex
-@inproceedings{wsn_clustering_benchmark,
-  title     = {Control-Plane Energy Modeling for Fair WSN Clustering Evaluation},
-  author    = {Zeng, Hao},
-  booktitle = {IEEE VTC},
-  year      = {2026}
-}
-```
-
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
