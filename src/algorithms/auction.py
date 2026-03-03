@@ -79,6 +79,11 @@ class AuctionClustering(ClusteringAlgorithm):
         self.ctrl_bits_result = packets_cfg.get('control_size_auction', 960)  # Auction result
         self.ctrl_bits_join = packets_cfg.get('control_size_auction', 960)  # Join request
 
+        # Fairness parameters
+        fairness_cfg = config.get('fairness', {})
+        share_mode = fairness_cfg.get('share_mode', 'alive_only')
+        self.share_alive_only = (share_mode == 'alive_only')
+
     @property
     def name(self) -> str:
         return "ABC-Auction"
@@ -519,7 +524,7 @@ class AuctionClustering(ClusteringAlgorithm):
                 continue
 
             # Calculate shares: share_i = E_i^(0) / sum(E_j^(0))
-            shares = cluster.calculate_shares()
+            shares = cluster.calculate_shares(alive_only=self.share_alive_only)
 
             for node in cluster.all_nodes:
                 if not node.is_alive:

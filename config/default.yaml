@@ -27,6 +27,20 @@ packets:
   control_size_heed: 800     # 100 bytes = 800 bits (HEED control)
   control_size_auction: 960  # 120 bytes = 960 bits (Auction control)
 
+# Control message energy model
+control:
+  enabled: true              # Master switch: if false, control messages don't consume energy
+  # Control packet sizes (bits) - can override per-algorithm defaults
+  bits_announce: 960         # CH/seed announcement
+  bits_bid: 960              # Auction bid message
+  bits_result: 960           # Auction result broadcast
+  bits_join: 800             # Join request
+  bits_status: 800           # HEED tentative status
+  # Discovery broadcast model
+  discovery_radius_mode: local   # "local" = use comm_range/join_radius, "global" = network diameter
+  # Multiplier for sensitivity testing (default 1.0)
+  bits_multiplier: 1.0
+
 clustering:
   desired_ch_percent: 0.05   # 5% cluster heads (for LEACH)
   join_radius: 30.0          # R_join = 30 (from spec)
@@ -39,6 +53,11 @@ simulation:
   num_trials: 15             # 15 trials (from spec)
   random_seed: 42            # base seed (incremented for each trial)
   recluster_interval: 50     # Re-cluster every N epochs (fixed timer for now)
+
+# Fairness system parameters
+fairness:
+  share_mode: alive_only      # "all_nodes" = include dead nodes, "alive_only" = only alive nodes
+                              # alive_only prevents dead nodes from distorting shares
 
 # ABC Auction mechanism parameters (from spec slide 8)
 auction:

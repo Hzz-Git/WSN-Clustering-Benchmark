@@ -1,264 +1,202 @@
-# MAS-WSN: Multi-Agent Auction-Based Clustering for Wireless Sensor Networks
+# WSN-Clustering-Benchmark
 
-## Project Overview
+A simulation framework for benchmarking wireless sensor network (WSN) clustering protocols with explicit control-plane energy modeling.
 
-This project implements and evaluates a **single-round sealed-bid auction mechanism** for cluster head election in wireless sensor networks, framed as a multi-agent system problem.
+The framework applies the same first-order radio model to control packets (advertisements, bids, join requests) as to data packets, enabling fair comparison of protocols with different coordination costs. It computes lifetime metrics (AUC_T, AUC\*, MNL, FND/HND/LND) and the control-energy fraction phi_c to expose regime-dependent protocol rankings.
 
----
+## Implemented Protocols
 
-## TODO Plan
+| Protocol | Type | Reference |
+|----------|------|-----------|
+| **LEACH-L** | Probabilistic, local join | Heinzelman et al., HICSS 2000 |
+| **LEACH** | Probabilistic, global join | Heinzelman et al., HICSS 2000 |
+| **HEED** | Iterative, hybrid cost | Younis & Fahmy, IEEE TMC 2004 |
+| **ABC** | Sealed-bid auction with fairness | *(this work)* |
 
-### Phase 1: Core Simulation Framework
-- [ ] **1.1** Set up project structure
-- [ ] **1.2** Implement `Node` class (agent representation)
-  - Properties: id, position (x, y), initial_energy, current_energy, role (CH/CM/SLEEP), cluster_id
-  - Methods: transmit(), receive(), aggregate(), update_energy()
-- [ ] **1.3** Implement `Network` class
-  - Node deployment (random uniform)
-  - Distance calculations
-  - Neighbor discovery
-- [ ] **1.4** Implement `EnergyModel` class
-  - First-order radio model
-  - Transmit energy: E_tx = E_elec * k + E_amp * k * d^n
-  - Receive energy: E_rx = E_elec * k
-  - Aggregation energy: E_da * k
-- [ ] **1.5** Implement `BaseStation` class
-  - Location (outside sensing field)
-  - Data reception from CHs
+## Installation
 
-### Phase 2: Algorithm Implementations
+```bash
+git clone https://github.com/<your-username>/WSN-Clustering-Benchmark.git
+cd WSN-Clustering-Benchmark
+pip install -r requirements.txt
+```
 
-#### 2.1 Proposed: Auction-Based Clustering (ABC)
-- [ ] **2.1.1** Implement bid calculation function
-  ```
-  bid_i = f(residual_energy, avg_distance_to_neighbors, fairness_credit)
-  ```
-- [ ] **2.1.2** Implement sealed-bid auction mechanism
-  - Broadcast phase
-  - Winner determination (local)
-  - CH announcement
-- [ ] **2.1.3** Implement fairness credit system
-  - Credit accumulation for non-CH rounds
-  - Credit spending when becoming CH
-- [ ] **2.1.4** Implement first-round seed CH selection
-  - Grid-based or distributed leader election
-- [ ] **2.1.5** Implement sleep scheduling
-  - Duty cycle management
-  - Wake-up coordination
+**Requirements:** Python 3.10+, NumPy, SciPy, Matplotlib, Pandas, PyYAML, tqdm.
 
-#### 2.2 Baseline: LEACH
-- [ ] **2.2.1** Implement probabilistic CH election
-  ```
-  T(n) = p / (1 - p * (r mod 1/p))  if n ∈ G, else 0
-  ```
-- [ ] **2.2.2** Implement cluster formation (join nearest CH)
-- [ ] **2.2.3** Implement TDMA scheduling within clusters
+## Quick Start
 
-#### 2.3 Baseline: HEED
-- [ ] **2.3.1** Implement hybrid CH election
-  - Primary: residual energy
-  - Secondary: intra-cluster communication cost
-- [ ] **2.3.2** Implement iterative clustering (multiple rounds)
-- [ ] **2.3.3** Implement tentative/final CH states
+### Reproduce all paper results (one command)
 
-#### 2.4 Baseline: LEACH-C (Centralized)
-- [ ] **2.4.1** Implement centralized optimal CH selection
-  - Simulated annealing or k-means based
-- [ ] **2.4.2** BS broadcasts cluster assignments
+```bash
+python reproduce.py          # Full run: simulations + figures (~30-60 min)
+python reproduce.py --quick  # Figures only from existing data (~10 sec)
+```
 
-#### 2.5 Baseline: Recent Method (Optional)
-- [ ] **2.5.1** Implement simplified ANN-based or PSO-based method from recent literature
+### Run a single protocol
 
-### Phase 3: Metrics & Data Collection
-- [ ] **3.1** Implement metric collectors
-  - `alive_nodes(round)` — number of alive nodes per round
-  - `first_node_dead` — round when first node dies (FND)
-  - `half_nodes_dead` — round when 50% nodes die (HND)
-  - `last_node_dead` — round when last node dies (LND)
-  - `residual_energy_std(round)` — energy balance metric
-  - `total_data_delivered` — throughput
-  - `control_overhead` — messages per round
-  - `avg_cluster_size` and `cluster_size_variance`
-  - `orphan_nodes` — nodes that couldn't join any CH
-- [ ] **3.2** Implement data logging (CSV/JSON)
-- [ ] **3.3** Implement checkpoint/resume for long simulations
+```bash
+python -m src.simulation --algorithm heed --trials 10
+```
 
-### Phase 4: Experimental Runs
+Available algorithms: `auction`, `heed`, `leach`, `leach-c`
 
-#### Experiment 1: Network Lifetime Comparison
-- [ ] **4.1.1** Configure: N=100, Area=100x100m, E_init=0.5J
-- [ ] **4.1.2** Run all 4-5 algorithms, 30 trials each
-- [ ] **4.1.3** Collect: FND, HND, LND, alive_nodes curve
+### Run the full 2D workload sweep
 
-#### Experiment 2: Energy Balance Analysis
-- [ ] **4.2.1** Same config as Exp 1
-- [ ] **4.2.2** Collect: residual_energy_std over time
-- [ ] **4.2.3** Visualize: box plots of final energy distribution
+This reproduces the paper's main experiment: 4 protocols x 4 payload sizes x 3 control scales x 10 trials.
 
-#### Experiment 3: Scalability
-- [ ] **4.3.1** Vary N = {50, 100, 200, 500}
-- [ ] **4.3.2** Fixed density: scale area proportionally
-- [ ] **4.3.3** Collect: FND, overhead, runtime
+```bash
+python experiments/final_n100_experiment.py
+```
 
-#### Experiment 4: Network Density
-- [ ] **4.4.1** Fixed N=100, vary area = {50x50, 100x100, 200x200}
-- [ ] **4.4.2** Collect: cluster quality metrics, orphan nodes
+Results are saved to `artifacts/` (CSV data and PDF figures).
 
-#### Experiment 5: Parameter Sensitivity (Proposed Method)
-- [ ] **4.5.1** Vary fairness credit weight
-- [ ] **4.5.2** Vary energy weight in bid function
-- [ ] **4.5.3** Analyze impact on lifetime and balance
+### Run individual figure generators
 
-### Phase 5: Analysis & Visualization
-- [ ] **5.1** Statistical analysis script
-  - Mean, std, 95% confidence intervals
-  - Paired t-test or Wilcoxon signed-rank test
-  - Effect size (Cohen's d)
-- [ ] **5.2** Generate plots
-  - Line plot: alive nodes vs. rounds (all methods)
-  - Bar chart: FND/HND/LND comparison with error bars
-  - Box plot: energy distribution at round 1000, 2000, etc.
-  - Heatmap: node death locations
-- [ ] **5.3** Generate summary tables (LaTeX-ready)
+```bash
+# Winner maps (Figure 1)
+python experiments/generate_single_winner_map.py
+python experiments/generate_rtd_winner_maps.py
 
----
+# Control-energy fraction line graph (Figure 2)
+python experiments/generate_phi_c_line_graph.py
+```
 
-## Simulation Parameters
+### Run a comparison experiment
 
-| Parameter | Symbol | Default Value |
-|-----------|--------|---------------|
-| Number of nodes | N | 100 |
-| Network area | A | 100m × 100m |
-| BS location | (x_bs, y_bs) | (50, 175) |
-| Initial energy | E_init | 0.5 J |
-| Electronics energy | E_elec | 50 nJ/bit |
-| Amplifier (free space) | ε_fs | 10 pJ/bit/m² |
-| Amplifier (multipath) | ε_mp | 0.0013 pJ/bit/m⁴ |
-| Distance threshold | d_0 | 87 m |
-| Data packet size | k_data | 4000 bits |
-| Control packet size | k_ctrl | 200 bits |
-| Aggregation energy | E_DA | 5 nJ/bit |
-| Desired CH percentage | p | 5% |
-| Max rounds | R_max | 5000 |
-| Trials per experiment | T | 30 |
+```bash
+python experiments/run_comparison.py --trials 15 --algorithms auction heed leach
+```
 
----
+## Metrics
+
+| Metric | Description |
+|--------|-------------|
+| **AUC_T** | Area under the alive-node curve over a fixed horizon T, normalized by N x T |
+| **AUC\*** | AUC normalized by LND (dimensionless depletion-shape factor) |
+| **MNL** | Mean Node Lifetime = AUC\* x LND (rounds) |
+| **FND / HND / LND** | First / Half / Last Node Dead milestones |
+| **phi_c** | Control-energy fraction: ratio of control-plane energy to total energy spent |
+
+## Configuration
+
+All parameters are in `config/default.yaml`:
+
+```yaml
+network:
+  num_nodes: 50
+  area_width: 100.0
+  area_height: 100.0
+  bs_x: 50.0
+  bs_y: 100.0
+  comm_range: 30.0
+
+energy:
+  e_elec: 50.0e-9      # J/bit
+  e_amp: 100.0e-12      # J/bit/m^2
+  e_da: 5.0e-9          # J/bit
+  initial_mean: 2.0     # J
+  initial_std: 0.2      # J
+
+control:
+  enabled: true
+  bits_multiplier: 1.0  # Scale factor for sensitivity testing
+  discovery_radius_mode: local  # "local" or "global"
+```
+
+## Adding a New Protocol
+
+1. Create `src/algorithms/your_protocol.py` inheriting from `ClusteringAlgorithm`:
+
+```python
+from src.algorithms.base import ClusteringAlgorithm
+
+class YourProtocol(ClusteringAlgorithm):
+    def setup(self):
+        """One-time initialization."""
+        pass
+
+    def run_epoch(self):
+        """Execute one clustering round. Must return a stats dict."""
+        # 1. Elect cluster heads
+        # 2. Form clusters (assign members)
+        # 3. Simulate data transmission (consume energy)
+        # 4. Use self.ctrl_unicast(), self.ctrl_broadcast_fixed(),
+        #    self.ctrl_broadcast_to_set() for control messages
+        alive = sum(1 for n in self.network.nodes if n.is_alive)
+        return {
+            'alive_nodes': alive,
+            'control_energy_j': self.control_energy_j,
+        }
+```
+
+2. Register it in `src/simulation.py`:
+
+```python
+from src.algorithms.your_protocol import YourProtocol
+ALGORITHMS['your_protocol'] = YourProtocol
+```
+
+3. Run: `python -m src.simulation --algorithm your_protocol --trials 10`
+
+The base class automatically tracks control-energy via `ctrl_unicast()`, `ctrl_broadcast_fixed()`, and `ctrl_broadcast_to_set()`. Call these for every control message your protocol sends to get accurate phi_c measurements.
 
 ## Project Structure
 
 ```
-MAS-WSN-Experiment/
-├── README.md
-├── requirements.txt
+WSN-Clustering-Benchmark/
 ├── config/
-│   └── default.yaml          # Simulation parameters
+│   └── default.yaml              # Simulation parameters
 ├── src/
-│   ├── __init__.py
+│   ├── simulation.py             # Main simulation engine
 │   ├── models/
-│   │   ├── __init__.py
-│   │   ├── node.py           # Node/Agent class
-│   │   ├── network.py        # Network class
-│   │   ├── energy.py         # Energy model
-│   │   └── base_station.py   # Base station
+│   │   ├── node.py               # Sensor node (agent) class
+│   │   ├── network.py            # Network topology & distance matrix
+│   │   ├── energy.py             # First-order radio energy model
+│   │   ├── cluster.py            # Cluster formation logic
+│   │   └── base_station.py       # Base station (sink)
 │   ├── algorithms/
-│   │   ├── __init__.py
-│   │   ├── base.py           # Abstract base class
-│   │   ├── auction.py        # Proposed auction-based
-│   │   ├── leach.py          # LEACH baseline
-│   │   ├── heed.py           # HEED baseline
-│   │   └── leach_c.py        # LEACH-C baseline
+│   │   ├── base.py               # Abstract base with control-energy tracking
+│   │   ├── auction.py            # ABC: Auction-Based Clustering
+│   │   ├── heed.py               # HEED baseline
+│   │   └── leach.py              # LEACH baseline (local & global modes)
 │   ├── metrics/
-│   │   ├── __init__.py
-│   │   └── collectors.py     # Metric collection
+│   │   └── collectors.py         # FND/HND/LND, AUC, energy logging
 │   └── utils/
-│       ├── __init__.py
-│       ├── visualization.py  # Plotting functions
-│       └── stats.py          # Statistical analysis
-├── experiments/
-│   ├── run_lifetime.py       # Experiment 1
-│   ├── run_scalability.py    # Experiment 3
-│   └── run_sensitivity.py    # Experiment 5
-├── results/
-│   ├── data/                 # Raw CSV results
-│   └── figures/              # Generated plots
-└── tests/
-    └── test_energy_model.py  # Unit tests
+│       └── visualization.py      # Plotting utilities
+├── experiments/                   # Experiment and figure generation scripts
+├── artifacts/                     # Generated CSV data and figures
+├── results/                       # Extended experiment outputs
+├── config/default.yaml            # Default simulation parameters
+├── requirements.txt
+├── LICENSE
+└── README.md
 ```
 
----
+## Energy Model
 
-## Getting Started
-
-```bash
-# Clone and setup
-cd MAS-WSN-Experiment
-pip install -r requirements.txt
-
-# Run single simulation
-python -m src.main --algorithm auction --trials 1
-
-# Run full experiment
-python experiments/run_lifetime.py --trials 30
-
-# Generate figures
-python -m src.utils.visualization --input results/data/ --output results/figures/
-```
-
----
-
-## Dependencies
+The framework uses the first-order radio energy dissipation model:
 
 ```
-numpy>=1.24
-scipy>=1.10
-matplotlib>=3.7
-seaborn>=0.12
-pandas>=2.0
-pyyaml>=6.0
-tqdm>=4.65
+E_tx(k, d) = E_elec * k + E_amp * k * d^2    (transmit k bits over distance d)
+E_rx(k)    = E_elec * k                       (receive k bits)
+E_da(k)    = E_DA * k                         (aggregate k bits)
 ```
 
----
+Control messages (CH advertisements, bids, join requests, HEED iterations) use the same model with configurable packet sizes and broadcast radii. This prevents systematic underestimation of coordination overhead.
 
-## Timeline Estimate
+## Citation
 
-| Phase | Estimated Time |
-|-------|----------------|
-| Phase 1: Core Framework | 2-3 days |
-| Phase 2: Algorithms | 3-4 days |
-| Phase 3: Metrics | 1 day |
-| Phase 4: Experiments | 2-3 days (includes runtime) |
-| Phase 5: Analysis | 1-2 days |
-| **Total** | **~10-12 days** |
+If you use this framework in your research, please cite:
 
----
+```bibtex
+@inproceedings{wsn_clustering_benchmark,
+  title     = {Control-Plane Energy Modeling for Fair WSN Clustering Evaluation},
+  author    = {Zeng, Hao},
+  booktitle = {IEEE VTC},
+  year      = {2026}
+}
+```
 
-## Key Design Decisions to Make
+## License
 
-Before implementation, clarify these in your paper:
-
-1. **Bid Function**: What exact formula?
-   - Option A: `bid = α * E_residual + β * (1/avg_dist) + γ * credit`
-   - Option B: `bid = E_residual * credit / avg_dist`
-   
-2. **Fairness Credit Update**:
-   - Additive: `credit += 1` each non-CH round
-   - Multiplicative: `credit *= 1.1`
-   - Cap or no cap?
-
-3. **Winner Determination Scope**:
-   - Global (highest bid wins)?
-   - Local (highest in k-hop neighborhood)?
-   
-4. **Communication Model**:
-   - Synchronous rounds?
-   - How do nodes learn others' bids in "sealed-bid"?
-
----
-
-## Notes
-
-- Start with LEACH implementation to validate energy model
-- Use fixed random seeds for reproducibility
-- Log everything — you can always filter later
-- Profile code if simulations are slow (NumPy vectorization helps)
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

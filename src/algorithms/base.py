@@ -47,6 +47,11 @@ class ClusteringAlgorithm(ABC):
         self.control_messages: int = 0  # Track overhead count
         self.control_energy_j: float = 0.0  # Track control energy consumption (Joules)
 
+        # Control message energy switches
+        ctrl_cfg = config.get('control', {})
+        self.control_enabled = ctrl_cfg.get('enabled', True)
+        self.bits_multiplier = float(ctrl_cfg.get('bits_multiplier', 1.0))
+
     @property
     def name(self) -> str:
         """Algorithm name for logging."""
@@ -61,6 +66,7 @@ class ClusteringAlgorithm(ABC):
         Send a unicast control message from sender to receiver.
 
         Deducts TX energy from sender, RX energy from receiver.
+        Respects control_enabled switch and bits_multiplier.
 
         Args:
             sender: Node sending the message
@@ -70,19 +76,21 @@ class ClusteringAlgorithm(ABC):
         Returns:
             Total energy consumed (TX + RX) in Joules
         """
-        if not sender.is_alive:
+        self.control_messages += 1
+
+        if not self.control_enabled or not sender.is_alive:
             return 0.0
 
+        effective_bits = int(bits * self.bits_multiplier)
         dist = self.network.get_distance(sender, receiver)
-        tx_energy = self.energy_model.control_tx_energy(bits, dist)
-        rx_energy = self.energy_model.control_rx_energy(bits)
+        tx_energy = self.energy_model.control_tx_energy(effective_bits, dist)
+        rx_energy = self.energy_model.control_rx_energy(effective_bits)
 
         sender.consume_energy(tx_energy)
         if receiver.is_alive:
             receiver.consume_energy(rx_energy)
 
         total = tx_energy + (rx_energy if receiver.is_alive else 0.0)
-        self.control_messages += 1
         self.control_energy_j += total
         return total
 
@@ -92,6 +100,7 @@ class ClusteringAlgorithm(ABC):
 
         Use for discovery/advertisement where TX power should be consistent
         regardless of who actually receives (avoids d² bias from sparse areas).
+        Respects control_enabled switch and bits_multiplier.
 
         Args:
             sender: Node broadcasting
@@ -101,25 +110,28 @@ class ClusteringAlgorithm(ABC):
         Returns:
             Total energy consumed in Joules
         """
-        if not sender.is_alive:
+        self.control_messages += 1
+
+        if not self.control_enabled or not sender.is_alive:
             return 0.0
 
+        effective_bits = int(bits * self.bits_multiplier)
+
         # TX energy based on fixed radius (not d_max to receivers)
-        tx_energy = self.energy_model.control_tx_energy(bits, radius)
+        tx_energy = self.energy_model.control_tx_energy(effective_bits, radius)
         sender.consume_energy(tx_energy)
 
         # All alive neighbors within radius receive
         receivers = [n for n in self.network.get_neighbors(sender, radius)
                      if n.is_alive and n.id != sender.id]
 
-        rx_energy_per = self.energy_model.control_rx_energy(bits)
+        rx_energy_per = self.energy_model.control_rx_energy(effective_bits)
         total_rx = 0.0
         for r in receivers:
             r.consume_energy(rx_energy_per)
             total_rx += rx_energy_per
 
         total = tx_energy + total_rx
-        self.control_messages += 1
         self.control_energy_j += total
         return total
 
@@ -129,6 +141,7 @@ class ClusteringAlgorithm(ABC):
 
         Use for cluster-wide notifications where receiver set is already known
         (e.g., auction result to cluster members). TX power based on d_max.
+        Respects control_enabled switch and bits_multiplier.
 
         Args:
             sender: Node broadcasting
@@ -138,31 +151,32 @@ class ClusteringAlgorithm(ABC):
         Returns:
             Total energy consumed in Joules
         """
-        if not sender.is_alive:
+        self.control_messages += 1
+
+        if not self.control_enabled or not sender.is_alive:
             return 0.0
 
         # Filter alive receivers, exclude sender
         alive_receivers = [r for r in receivers if r.is_alive and r.id != sender.id]
 
         if not alive_receivers:
-            # No receivers, still count message but minimal energy
-            self.control_messages += 1
             return 0.0
+
+        effective_bits = int(bits * self.bits_multiplier)
 
         # TX energy based on max distance to any receiver
         d_max = max(self.network.get_distance(sender, r) for r in alive_receivers)
-        tx_energy = self.energy_model.control_tx_energy(bits, d_max)
+        tx_energy = self.energy_model.control_tx_energy(effective_bits, d_max)
         sender.consume_energy(tx_energy)
 
         # All receivers pay RX
-        rx_energy_per = self.energy_model.control_rx_energy(bits)
+        rx_energy_per = self.energy_model.control_rx_energy(effective_bits)
         total_rx = 0.0
         for r in alive_receivers:
             r.consume_energy(rx_energy_per)
             total_rx += rx_energy_per
 
         total = tx_energy + total_rx
-        self.control_messages += 1
         self.control_energy_j += total
         return total
 
@@ -172,6 +186,7 @@ class ClusteringAlgorithm(ABC):
 
         BS has unlimited energy, so only receivers pay RX energy.
         Use for LEACH-C centralized assignments.
+        Respects control_enabled switch and bits_multiplier.
 
         Args:
             receivers: List of nodes receiving the broadcast
@@ -180,15 +195,20 @@ class ClusteringAlgorithm(ABC):
         Returns:
             Total RX energy consumed in Joules
         """
+        self.control_messages += 1
+
+        if not self.control_enabled:
+            return 0.0
+
+        effective_bits = int(bits * self.bits_multiplier)
         alive_receivers = [r for r in receivers if r.is_alive]
 
-        rx_energy_per = self.energy_model.control_rx_energy(bits)
+        rx_energy_per = self.energy_model.control_rx_energy(effective_bits)
         total_rx = 0.0
         for r in alive_receivers:
             r.consume_energy(rx_energy_per)
             total_rx += rx_energy_per
 
-        self.control_messages += 1
         self.control_energy_j += total_rx
         return total_rx
 

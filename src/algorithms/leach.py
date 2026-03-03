@@ -47,12 +47,28 @@ class LEACHClustering(ClusteringAlgorithm):
         self.rounds_per_cycle = int(1 / self.p)  # 1/p rounds per cycle
         self.current_round_in_cycle = 0
 
-        # Network dimensions for broadcast radius
-        # Since LEACH uses global join (nearest CH), advertisement must cover whole network
+        # Broadcast radius for CH advertisement
+        # LEACH Protocol Design: Nodes join nearest CH anywhere in network (global join)
+        # Therefore, advertisement must reach all nodes (global broadcast).
+        # Using local radius would artificially cripple LEACH's design.
+        #
+        # Config switch: discovery_radius_mode
+        # - "global" (default for LEACH): Use network diameter (faithful to original design)
+        # - "local": Use join_radius (for sensitivity testing only)
+        ctrl_cfg = config.get('control', {})
+        radius_mode = ctrl_cfg.get('discovery_radius_mode', 'global')
+
         net_cfg = config.get('network', {})
         area_w = net_cfg.get('area_width', 100.0)
         area_h = net_cfg.get('area_height', 100.0)
-        self.network_diameter = np.sqrt(area_w**2 + area_h**2)  # Diagonal
+        cluster_cfg = config.get('clustering', {})
+
+        if radius_mode == 'local':
+            # Use join_radius (for sensitivity testing, not recommended for LEACH)
+            self.adv_radius = cluster_cfg.get('join_radius', 30.0)
+        else:
+            # Global: use network diagonal (original LEACH design)
+            self.adv_radius = np.sqrt(area_w**2 + area_h**2)
 
         # Control message sizes (bits)
         packets_cfg = config.get('packets', {})
@@ -115,7 +131,7 @@ class LEACHClustering(ClusteringAlgorithm):
                 heads.append(node)
                 self.was_ch_this_cycle.add(node.id)
                 # Control message: CH advertisement (network-wide, since join is global)
-                self.ctrl_broadcast_fixed(node, self.network_diameter, self.ctrl_bits_adv)
+                self.ctrl_broadcast_fixed(node, self.adv_radius, self.ctrl_bits_adv)
 
         # If no CH elected (rare), force selection
         if not heads and alive_nodes:
@@ -123,7 +139,7 @@ class LEACHClustering(ClusteringAlgorithm):
             best = max(alive_nodes, key=lambda n: n.current_energy)
             heads.append(best)
             self.was_ch_this_cycle.add(best.id)
-            self.ctrl_broadcast_fixed(best, self.network_diameter, self.ctrl_bits_adv)
+            self.ctrl_broadcast_fixed(best, self.adv_radius, self.ctrl_bits_adv)
 
         return heads
 

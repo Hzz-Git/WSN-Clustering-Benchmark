@@ -36,3 +36,14 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Artifacts (regenerated from experiments)
+artifacts/*.csv
+artifacts/*.pdf
+artifacts/*.png
+
+# Claude Code
+.claude/
+
+# Paper drafts (separate repo)
+paper/

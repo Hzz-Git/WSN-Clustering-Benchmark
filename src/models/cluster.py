@@ -89,18 +89,33 @@ class Cluster:
         """Get sum of initial energy of all nodes in cluster."""
         return sum(n.initial_energy for n in self.all_nodes)
 
-    def calculate_shares(self) -> dict[int, float]:
+    def calculate_shares(self, alive_only: bool = False) -> dict[int, float]:
         """
         Calculate capacity-weighted duty shares for fairness.
         share_i = E_i^(0) / sum(E_j^(0)) for j in cluster
 
+        Args:
+            alive_only: If True, only consider alive nodes in denominator.
+                        This prevents dead nodes from distorting shares.
+
         Returns:
             Dict mapping node_id to share value
         """
-        total = self.get_total_initial_energy()
+        if alive_only:
+            # Only alive nodes contribute to total
+            nodes = [n for n in self.all_nodes if n.is_alive]
+        else:
+            # All nodes (original behavior)
+            nodes = self.all_nodes
+
+        if not nodes:
+            return {}
+
+        total = sum(n.initial_energy for n in nodes)
         if total == 0:
-            return {n.id: 0.0 for n in self.all_nodes}
-        return {n.id: n.initial_energy / total for n in self.all_nodes}
+            return {n.id: 0.0 for n in nodes}
+
+        return {n.id: n.initial_energy / total for n in nodes}
 
     def __repr__(self) -> str:
         backup_str = f", backup={self.backup.id}" if self.backup else ""

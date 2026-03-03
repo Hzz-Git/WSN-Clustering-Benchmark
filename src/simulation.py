@@ -100,8 +100,11 @@ class Simulation:
         """Create energy model from config."""
         return EnergyModel(
             e_elec=self.energy_cfg.get('e_elec', 50e-9),
-            e_amp=self.energy_cfg.get('e_amp', 100e-12),
+            e_fs=self.energy_cfg.get('e_fs', 10e-12),
+            e_mp=self.energy_cfg.get('e_mp', 0.0013e-12),
             e_da=self.energy_cfg.get('e_da', 5e-9),
+            d_crossover=self.energy_cfg.get('d_crossover', 87.0),
+            use_two_mode=True,
         )
 
     def setup_algorithm(
@@ -198,6 +201,14 @@ class Simulation:
         if lnd_epoch is None:
             lnd_epoch = self.max_epochs
 
+        # Calculate AUC (Alive-node area-under-curve)
+        # AUC = (1/(N*T)) * sum(alive(t) for t in 1..T)
+        # If simulation ends early, treat remaining epochs as alive=0
+        alive_sum = sum(h['alive_nodes'] for h in self.history)
+        # Add zeros for epochs not simulated (if network died early)
+        # Division is always by max_epochs (T) to avoid censoring bias
+        auc = alive_sum / (initial_nodes * self.max_epochs)
+
         # Compile results
         results = {
             'algorithm': self.algorithm.name,
@@ -207,6 +218,7 @@ class Simulation:
             'fnd': fnd_epoch,
             'hnd': hnd_epoch,
             'lnd': lnd_epoch,
+            'auc': auc,  # Alive-node area-under-curve [0,1]
             'final_alive': self.network.count_alive(),
             'final_energy': self.network.get_total_energy(),
             'total_epochs': len(self.history),
@@ -290,11 +302,13 @@ def run_comparison(
         fnds = [r['fnd'] for r in results if r['fnd'] is not None]
         hnds = [r['hnd'] for r in results if r['hnd'] is not None]
         lnds = [r['lnd'] for r in results]
+        aucs = [r['auc'] for r in results]
 
         print(f"\n{algo_name} Summary ({num_trials} trials):")
         print(f"  FND: {np.mean(fnds):.1f} +/- {np.std(fnds):.1f}")
         print(f"  HND: {np.mean(hnds):.1f} +/- {np.std(hnds):.1f}")
         print(f"  LND: {np.mean(lnds):.1f} +/- {np.std(lnds):.1f}")
+        print(f"  AUC: {np.mean(aucs):.4f} +/- {np.std(aucs):.4f}")
 
     return all_results
 
@@ -329,14 +343,17 @@ if __name__ == "__main__":
         print(f"  FND: {result['fnd']}")
         print(f"  HND: {result['hnd']}")
         print(f"  LND: {result['lnd']}")
+        print(f"  AUC: {result['auc']:.4f}")
     else:
         results = sim.run_trials(args.algorithm, args.trials, args.seed, args.verbose)
 
         fnds = [r['fnd'] for r in results if r['fnd'] is not None]
         hnds = [r['hnd'] for r in results if r['hnd'] is not None]
         lnds = [r['lnd'] for r in results]
+        aucs = [r['auc'] for r in results]
 
         print(f"\nSummary ({args.trials} trials):")
         print(f"  FND: {np.mean(fnds):.1f} +/- {np.std(fnds):.1f}")
         print(f"  HND: {np.mean(hnds):.1f} +/- {np.std(hnds):.1f}")
         print(f"  LND: {np.mean(lnds):.1f} +/- {np.std(lnds):.1f}")
+        print(f"  AUC: {np.mean(aucs):.4f} +/- {np.std(aucs):.4f}")
