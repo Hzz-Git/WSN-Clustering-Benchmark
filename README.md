@@ -4,6 +4,46 @@ A simulation framework for benchmarking wireless sensor network (WSN) clustering
 
 The framework applies the same first-order radio model to control packets (advertisements, bids, join requests) as to data packets, enabling fair comparison of protocols with different coordination costs. It computes lifetime metrics (AUC_T, AUC\*, MNL, FND/HND/LND) and the control-energy fraction phi_c to expose regime-dependent protocol rankings.
 
+## Framework Overview
+
+```mermaid
+flowchart TD
+    A["<b>config/default.yaml</b><br/>Network, energy model,<br/>packet sizes, control scales"] --> B
+
+    B["<b>Network Setup</b><br/>Deploy N nodes (heterogeneous energy)<br/>Compute distance matrix<br/>Set base station position"]
+
+    B --> C{"Select Protocol"}
+    C -->|"Your own"| D["<b>Your Protocol</b><br/>Inherit from ClusteringAlgorithm<br/>Implement run_epoch()"]
+    C -->|"Built-in"| E["LEACH / LEACH-L / HEED / ABC"]
+
+    D --> F
+    E --> F
+
+    F["<b>Simulation Loop</b> (per epoch)"]
+    F --> G["1. Elect Cluster Heads<br/><i>(algorithm-specific)</i>"]
+    G --> H["2. Form Clusters<br/><i>(assign members to CHs)</i>"]
+    H --> I["3. Data Transmission<br/><i>Members → CHs → BS</i><br/>Energy: E_tx, E_rx, E_da"]
+    I --> J["4. Control Energy Tracking<br/><i>Same radio model applied to</i><br/><i>advertisements, bids, joins</i>"]
+    J --> K{"All nodes dead<br/>or t = T_max?"}
+    K -->|No| F
+    K -->|Yes| L
+
+    L["<b>Metrics</b>"]
+    L --> M["AUC_T — fixed-horizon lifetime"]
+    L --> N["AUC* — depletion-shape factor"]
+    L --> O["MNL — mean node lifetime (rounds)"]
+    L --> P["FND / HND / LND — milestones"]
+    L --> Q["φ_c — control-energy fraction"]
+
+    Q --> R["<b>Outputs</b><br/>CSV data + PDF figures<br/><i>artifacts/</i>"]
+
+    style A fill:#e8f4fd,stroke:#3498db
+    style D fill:#e8f8e8,stroke:#2ecc71
+    style F fill:#fff3e0,stroke:#e67e22
+    style L fill:#fde8e8,stroke:#e74c3c
+    style R fill:#f3e8fd,stroke:#9b59b6
+```
+
 ## Implemented Protocols
 
 | Protocol | Type | Reference |
